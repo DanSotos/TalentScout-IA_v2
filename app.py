@@ -259,47 +259,77 @@ with tab_buscar:
         st.markdown("### 📂 Carga de Documento")
         uploaded_file = st.file_uploader("Arrastra tu CV en formato PDF", type="pdf")
 
+    # Leemos el CV y detectamos el área ANTES de dibujar los campos de la derecha,
+    # solo para poder mostrarla como referencia (no se usa como término de búsqueda).
+    cv_text = None
+    carrera_sugerida = ""
+    if uploaded_file is not None:
+        reader = PdfReader(uploaded_file)
+        cv_text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
+        cv_hash = hashlib.sha256(cv_text.encode("utf-8")).hexdigest()[:12]
+        carrera_sugerida = extract_career_from_cv(cv_text)
+
     with col_inputs_right:
         st.markdown("### ⚙️ Configuración del Agente")
-        keywords = st.text_input("Cargo o tecnologías a buscar:", value="")
+        if carrera_sugerida:
+            st.caption(f"📌 Área detectada del CV: **{carrera_sugerida}**")
+        elif uploaded_file is None:
+            st.caption("📌 Área detectada del CV: _(sube tu CV para detectarla)_")
+        keywords = st.text_input(
+            "Cargo o preferencia laboral (opcional):",
+            value="",
+            placeholder="Ej: investigador en biología molecular, analista de datos junior...",
+            help="Opcional. El área (arriba) siempre se usa para buscar y filtrar por rubro. "
+                 "Si además escribes un cargo puntual, se usa como señal adicional para "
+                 "afinar el ranking de las vacantes dentro de tu área.",
+        )
         location = st.text_input("Ciudad / País:", value="")
         limit = st.number_input("Cantidad de ofertas a evaluar:", min_value=3, max_value=60, value=15, step=3)
 
     st.write("---")
 
     if uploaded_file is not None:
-        reader = PdfReader(uploaded_file)
-        cv_text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
-        cv_hash = hashlib.sha256(cv_text.encode("utf-8")).hexdigest()[:12]
         st.success(f"✓ Currículum analizado correctamente en memoria.")
 
-        carrera_sugerida = extract_career_from_cv(cv_text)
         carrera = st.text_input(
-            "Carrera / área profesional:",
+            "Área profesional (detectada automáticamente):",
             value=carrera_sugerida,
             help=(
-                "Extraído automáticamente del CV. Verificar si corresponde a su área profesional. "
-
+                "Extraído automáticamente del CV. Se usa para descartar vacantes de un rubro "
+                "completamente distinto al tuyo, aunque coincidan por palabras clave. "
+                "Verificar si corresponde a tu área profesional."
             ),
         )
 
-        if st.button("🚀 Ejecutar Agente de Inteligencia Artificial"):
+        # El área es obligatoria (se detecta sola del CV) y siempre es la que
+        # se usa para buscar en los portales. El cargo es opcional: si se
+        # escribe, se usa como una SEGUNDA señal de matching que afina el
+        # ranking dentro de esa misma área (ver semantic_filter.py).
+        if not keywords.strip():
+            st.caption(f"ℹ️ No escribiste un cargo específico: se buscará y clasificará usando solo el área **{carrera}**.")
+        else:
+            st.caption(f"ℹ️ Se buscará por el área **{carrera}**, y el ranking se afinará según el cargo que escribiste.")
+
+        if st.button("🚀 Ejecutar Agente de Inteligencia Artificial", disabled=not carrera.strip()):
             status_bar = st.status("Analizando mercado laboral...", expanded=True)
             with status_bar:
                 t_pipeline_inicio = time.perf_counter()
 
-                # ── Fase 1: Embedding del CV ────────────────────────────
+                # ── Fase 1: Embedding del CV (y del cargo, si existe) ──
                 st.write("Generando vectores semánticos con Sentence-BERT...")
                 t0 = time.perf_counter()
                 processor = SentenceBERTProcessor()
                 processor.load_model()
                 cv_embedding = processor.generate_cv_embedding(cv_text)
+                cargo_embedding = (
+                    processor.generate_embedding(keywords.strip()) if keywords.strip() else None
+                )
                 t_embedding = time.perf_counter() - t0
 
                 # ── Fase 2: Búsqueda / scraping (proceso aparte) ────────
                 st.write("Extrayendo ofertas en tiempo real con Playwright...")
                 t0 = time.perf_counter()
-                resultado_busqueda = buscar_vacantes_subprocess(keywords, location, limit)
+                resultado_busqueda = buscar_vacantes_subprocess(carrera, location, limit)
                 t_busqueda = time.perf_counter() - t0
 
                 for nombre_scraper, err in resultado_busqueda.get("errores", {}).items():
@@ -316,7 +346,9 @@ with tab_buscar:
                     t0 = time.perf_counter()
                     semantic_filter = SemanticFilter(processor)
                     filtered = semantic_filter.filter_vacancies(
-                        cv_embedding, all_vacancies, declared_career=carrera
+                        cv_embedding, all_vacancies,
+                        declared_career=carrera,
+                        cargo_embedding=cargo_embedding,
                     )
 
                     decision_maker = DecisionMaker(processor)
