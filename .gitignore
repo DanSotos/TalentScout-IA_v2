@@ -5,3 +5,4 @@ data/chrome_profile/
 logs/
 .env
 venv/
+data/sessions/
