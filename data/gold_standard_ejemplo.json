@@ -1,0 +1,12 @@
+[
+  {
+    "vacante_titulo": "Desarrollador Python Backend",
+    "vacante_texto": "Desarrollador Python Backend. Empresa XYZ. Buscamos desarrollador con experiencia en Django, FastAPI, PostgreSQL y Docker para el equipo de plataforma. Requisitos: Python, Django, SQL, Git.",
+    "relevante": true
+  },
+  {
+    "vacante_titulo": "Ejecutivo de Ventas Retail",
+    "vacante_texto": "Ejecutivo de Ventas Retail. Empresa ABC. Buscamos vendedor con experiencia en atención al cliente y metas comerciales para tienda retail. Requisitos: ventas, atención al cliente, Excel básico.",
+    "relevante": false
+  }
+]
